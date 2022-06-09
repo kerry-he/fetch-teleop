@@ -1,0 +1,11 @@
+bTe_handover: [0.9, 0.0, 0.8]
+bRe_handover: [0.0, 0.0, 0.0]
+base_ang_speed: 1.0
+base_lin_speed: 1.0
+ee_speed: 1.0
+torso_max: 0.3
+wTb_waypoints:
+- [0.0, 0.0]
+- [5.0, 0.0]
+- [5.0, 5.0]
+- [0.0, 5.0]

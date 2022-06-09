@@ -1,0 +1,11 @@
+<?xml version="1.0"?>
+<launch>
+  <rosparam command="load" file="$(find fetch_teleop)/cfg/preferences.yaml" ns="fetch_teleop"/>
+
+  <include file="$(find ds4_driver)/launch/ds4_driver.launch" />
+  <node pkg="fetch_teleop" type="main_ros.py" name="fetch_teleop" output="screen" />
+
+  <!-- <node pkg="rosbag" type="record" name="viz"
+    args="record -o /home/hrigroup/kerry_ws/src/fetch_teleop/bags/fetch_teleop /tf /tf_static /map
+    /head_camera/rgb/image_rect_color/compressed /visualization_marker /status "/>     -->
+</launch>
