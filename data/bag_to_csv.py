@@ -1,8 +1,13 @@
-import rosbag
 import os
 import csv
 import numpy as np
 
+import rosbag
+import rospy
+
+import tf
+import tf2_ros
+import geometry_msgs.msg
 
 BODYPARTS = [
     "nose",
@@ -32,15 +37,29 @@ BODYPARTS = [
     "right_hip"
 ]
 
+def ang_diff(a, b):
+    normDeg = abs(a-b)
+    while normDeg > 2*np.pi:
+        normDeg -= 2*np.pi
+    absDiffDeg = min(2*np.pi-normDeg, normDeg)
+    return absDiffDeg
+
 
 class BagToCSV:
     def __init__(self, name):
         self.name = name
         self.directory = "./"
+        self.br = tf.TransformBroadcaster()
+        self.static_br = tf2_ros.StaticTransformBroadcaster()
+        self.listener = tf.TransformListener()
 
         self.dt = 0.1
         self.t0 = None
         self.i = 0
+
+        self.episode = 0
+        self.theta_to_user = -3.0
+        self.episode_hysteresis = False
 
         self.base_lin = 0.0
         self.base_ang = 0.0
@@ -48,13 +67,27 @@ class BagToCSV:
         
         self.bodyparts = [0.0] * len(BODYPARTS) * 4
 
+        self.t_base = [0, 0, 0]
+        self.R_base = [0, 0, 0, 1]
+        self.t_gripper = [0, 0, 0]
+        self.R_gripper = [0, 0, 0, 1]
+        self.t_handover_goal = [0, 0, 0]
+        self.R_handover_goal = [0, 0, 0, 1]
+
+        self.handover_quality = "N/A"
+        self.handover_type = "N/A"          
+
 
     def run(self):
         with open(self.name + ".csv", "w", newline='') as csvfile:
             csv_writer = csv.writer(csvfile, delimiter=',',
                                     quotechar='|', quoting=csv.QUOTE_MINIMAL)
 
-            title = ["time (s)", "base (linear)", "base (angular)", "arm (linear)"]
+            title = ["episode", "time (s)", "handover quality", "handover type"]
+            title += ["base (linear)", "base (angular)", "arm (linear)"]
+            title += ["base (x)", "base (y)", "base (theta)"]
+            title += ["gripper (x)", "gripper (y)", "gripper (z), gripper (qx)", "gripper (qy)", "gripper (qz)", "gripper (qw)"]
+            title += ["handover_goal (x)", "handover_goal (y)", "handover_goal (z), handover_goal (qx)", "handover_goal (qy)", "handover_goal (qz)", "handover_goal (qw)"]
             for bodypart in BODYPARTS:
                 title += [bodypart + " (x)",
                           bodypart + " (y)",
@@ -72,22 +105,30 @@ class BagToCSV:
                             current_message = 0                            
 
                             for topic, msg, t in rosbag.Bag(filename.name).read_messages():
+                                t_obj = t
                                 t = t.to_sec()
                                 if self.t0 is None:
                                     self.t0 = t
 
                                 if t - self.t0 >= self.dt * self.i:
-                                    csv_writer.writerow([self.dt * self.i] + self.write_csv_line())
+                                    csv_writer.writerow(
+                                        [self.episode, self.dt * self.i, self.handover_quality, self.handover_type] 
+                                         + self.write_csv_line()
+                                    )
                                     self.i += 1
 
                                 if topic == "/status":
                                     self.read_ds4(msg)
-                                # elif topic == "/tf":
-                                #     for transforms in msg.transforms:
-                                #         if transforms.header.frame_id == "odom" or transforms.header.frame_id == "map":
-                                #             print(msg)
+                                elif topic == "/tf":
+                                    self.read_tf(msg, t_obj)
+                                elif topic == "/tf_static":
+                                    self.read_static_tf(msg, t_obj)
                                 elif topic == "/body_pose":
                                     self.read_pose(msg)
+                                elif topic == "/good_data":
+                                    self.read_data_quality(msg)
+
+                                self.update_episode()
 
                                 current_message += 1
 
@@ -111,8 +152,30 @@ class BagToCSV:
         else:
             self.ee_lin = 0.0
 
-    def read_tf(self, msg):
-        pass
+    def read_tf(self, msg, t):
+        for transform in msg.transforms:
+            trans = [
+                transform.transform.translation.x,
+                transform.transform.translation.y,
+                transform.transform.translation.z
+            ]
+            quat= [
+                transform.transform.rotation.x,
+                transform.transform.rotation.y,
+                transform.transform.rotation.z,
+                transform.transform.rotation.w
+            ]            
+            self.br.sendTransform(trans,
+                                  quat,
+                                  t,
+                                  transform.child_frame_id,
+                                  transform.header.frame_id)
+
+    def read_static_tf(self, msg, t):
+        for transform in msg.transforms:
+            static_transformStamped = transform
+            self.static_br.sendTransform(static_transformStamped)
+
 
     def read_pose(self, msg):
         self.bodyparts = []
@@ -124,14 +187,60 @@ class BagToCSV:
                 msg.array[i].confidence
             ]
 
+    def read_data_quality(self, msg):
+        if msg.data:
+            self.handover_quality = "GOOD"
+        else:
+            self.handover_quality = "BAD"
+
+    def update_episode(self):
+        robot_theta = tf.transformations.euler_from_quaternion(self.R_base, axes='sxyz')[-1]
+
+        if self.episode_hysteresis:
+            if ang_diff(robot_theta, self.theta_to_user) < 0.1:
+                self.episode += 1
+                self.episode_hysteresis = False
+                self.handover_quality = "N/A"
+                self.handover_type = "N/A"
+        else:
+            self.episode_hysteresis = ang_diff(robot_theta, self.theta_to_user) > np.pi / 2
+
 
     def write_csv_line(self):
+        # Controller inputs
         row = [
             self.base_lin,
             self.base_ang,
             self.ee_lin
         ]
 
+        # TF frames
+        try:
+            (trans,rot) = self.listener.lookupTransform("map", "base_link", rospy.Time(0))
+            self.t_base = trans
+            self.R_base = rot
+        except (tf.LookupException, tf.ConnectivityException, tf.ExtrapolationException):
+            pass
+
+        try:
+            (trans,rot) = self.listener.lookupTransform("base_link", "gripper_link", rospy.Time(0))
+            self.t_gripper = trans
+            self.R_gripper = rot            
+        except (tf.LookupException, tf.ConnectivityException, tf.ExtrapolationException):
+            pass
+
+        try:
+            (trans,rot) = self.listener.lookupTransform("base_link", "handover_goal", rospy.Time(0))
+            self.t_handover_goal = trans
+            self.R_handover_goal = rot            
+        except (tf.LookupException, tf.ConnectivityException, tf.ExtrapolationException):
+            pass
+
+        row += self.t_base[0:2] + [tf.transformations.euler_from_quaternion(self.R_base, axes='sxyz')[-1]]
+        row += self.t_gripper + self.R_gripper
+        row += self.t_handover_goal + self.R_handover_goal
+
+        # Pose estimation
         row += self.bodyparts
 
         return row
@@ -140,5 +249,7 @@ class BagToCSV:
 if __name__ == "__main__":
     name = input("Enter prefix of bag to convert to CSV: ")
 
+    rospy.init_node('test_node')
+    
     bag_to_csv = BagToCSV(name)
     bag_to_csv.run()
