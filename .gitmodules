@@ -4,3 +4,6 @@
 [submodule "pose_estimation/src/depthai_blazepose"]
 	path = pose_estimation/src/depthai_blazepose
 	url = https://github.com/kerry-he/depthai_blazepose
+[submodule "geometry2"]
+	path = geometry2
+	url = https://github.com/ros/geometry2.git

@@ -25,6 +25,7 @@
 
 ### Visualize
 
+    sudo apt-get install ros-melodic-fetch-description
     rosparam set robot_description -t /opt/ros/melodic/share/fetch_description/robots/fetch.urdf
 
 # Controls
