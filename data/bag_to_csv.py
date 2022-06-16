@@ -75,7 +75,10 @@ class BagToCSV:
         self.R_handover_goal = [0, 0, 0, 1]
 
         self.handover_quality = "N/A"
-        self.handover_type = "N/A"          
+        self.handover_type = "N/A"
+        self.arm_status = "STATIONARY"
+        self.base_status = "STATIONARY"
+        self.handover_status = "MIDDLE"
 
 
     def run(self):
@@ -83,7 +86,8 @@ class BagToCSV:
             csv_writer = csv.writer(csvfile, delimiter=',',
                                     quotechar='|', quoting=csv.QUOTE_MINIMAL)
 
-            title = ["episode", "time (s)", "handover quality", "handover type"]
+            title = ["episode", "time (s)"]
+            title += ["handover quality", "handover type", "arm status", "base status", "handover status"]
             title += ["base (linear)", "base (angular)", "arm (linear)"]
             title += ["base (x)", "base (y)", "base (theta)"]
             title += ["gripper (x)", "gripper (y)", "gripper (z), gripper (qx)", "gripper (qy)", "gripper (qz)", "gripper (qw)"]
@@ -112,8 +116,7 @@ class BagToCSV:
 
                                 if t - self.t0 >= self.dt * self.i:
                                     csv_writer.writerow(
-                                        [self.episode, self.dt * self.i, self.handover_quality, self.handover_type] 
-                                         + self.write_csv_line()
+                                        [self.episode, self.dt * self.i] + self.write_csv_line()
                                     )
                                     self.i += 1
 
@@ -125,8 +128,6 @@ class BagToCSV:
                                     self.read_static_tf(msg, t_obj)
                                 elif topic == "/body_pose":
                                     self.read_pose(msg)
-                                elif topic == "/good_data":
-                                    self.read_data_quality(msg)
 
                                 self.update_episode()
 
@@ -142,15 +143,55 @@ class BagToCSV:
         if msg.button_l1 and not msg.button_r1:
             self.base_lin = msg.axis_right_y
             self.base_ang = msg.axis_left_x
+            if self.base_ang != 0.0:
+                self.base_status = "ROTATING"
+            elif self.base_lin != 0.0:
+                robot_theta = tf.transformations.euler_from_quaternion(self.R_base, axes='sxyz')[-1]
+                if ang_diff(robot_theta, self.theta_to_user) < np.pi / 2:
+                    self.base_status = "TO PARTICIAPNT"
+                else:
+                    self.base_status = "TO OPERATOR"
+            else:
+                self.base_status = "STATIONARY"
         else:
             self.base_lin = 0.0
             self.base_ang = 0.0
+            self.base_status = "STATIONARY"            
 
         # Arm movement
         if msg.button_l1 and msg.button_r1:
             self.ee_lin = msg.axis_right_y
+            if msg.axis_right_y > 0.0:
+                self.arm_status = "REACHING"
+            elif msg.axis_right_y == 0.0:
+                self.arm_status = "STATIONARY"
+            else:
+                 self.arm_status = "TUCKING"
         else:
             self.ee_lin = 0.0
+            self.arm_status = "STATIONARY"
+
+        # Handover
+        if msg.button_l1:
+            if msg.button_square:
+                self.handover_status = "LEFT"
+            elif msg.button_triangle:
+                self.handover_status = "MIDDLE"
+            elif msg.button_circle:
+                self.handover_status = "RIGHT"
+
+        # Status indicators
+        if not msg.button_l1:
+            if msg.button_circle:
+                self.handover_quality = "GOOD"
+            elif msg.button_cross:
+                self.handover_quality = "BAD"
+
+            if msg.button_l2:
+                self.handover_type = "ROBOT TO HUMAN"
+            elif msg.button_r2:
+                self.handover_type = "HUMAN TO ROBOT"   
+
 
     def read_tf(self, msg, t):
         for transform in msg.transforms:
@@ -187,12 +228,6 @@ class BagToCSV:
                 msg.array[i].confidence
             ]
 
-    def read_data_quality(self, msg):
-        if msg.data:
-            self.handover_quality = "GOOD"
-        else:
-            self.handover_quality = "BAD"
-
     def update_episode(self):
         robot_theta = tf.transformations.euler_from_quaternion(self.R_base, axes='sxyz')[-1]
 
@@ -207,8 +242,17 @@ class BagToCSV:
 
 
     def write_csv_line(self):
-        # Controller inputs
+        # Categorical labels
         row = [
+            self.handover_quality,
+            self.handover_type,
+            self.arm_status,
+            self.base_status,
+            self.handover_status
+        ]
+
+        # Controller inputs
+        row += [
             self.base_lin,
             self.base_ang,
             self.ee_lin
@@ -249,7 +293,7 @@ class BagToCSV:
 if __name__ == "__main__":
     name = input("Enter prefix of bag to convert to CSV: ")
 
-    rospy.init_node('test_node')
+    rospy.init_node('bag_to_csv_node')
     
     bag_to_csv = BagToCSV(name)
     bag_to_csv.run()
