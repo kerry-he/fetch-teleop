@@ -148,7 +148,7 @@ class BagToCSV:
             elif self.base_lin != 0.0:
                 robot_theta = tf.transformations.euler_from_quaternion(self.R_base, axes='sxyz')[-1]
                 if ang_diff(robot_theta, self.theta_to_user) < np.pi / 2:
-                    self.base_status = "TO PARTICIAPNT"
+                    self.base_status = "TO PARTICIPANT"
                 else:
                     self.base_status = "TO OPERATOR"
             else:
