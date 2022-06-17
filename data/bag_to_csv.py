@@ -37,6 +37,8 @@ BODYPARTS = [
     "right_hip"
 ]
 
+EXPRESSIONS = ['neutral', 'happy', 'sad', 'surprise', 'fear', 'disgust', 'anger', 'contempt']
+
 def ang_diff(a, b):
     normDeg = abs(a-b)
     while normDeg > 2*np.pi:
@@ -80,6 +82,9 @@ class BagToCSV:
         self.base_status = "STATIONARY"
         self.handover_status = "MIDDLE"
 
+        self.emotions_global = [0.0] * (len(EXPRESSIONS) + 2)
+        self.emotions_fetch = [0.0] * (len(EXPRESSIONS) + 2)
+
 
     def run(self):
         with open(self.name + ".csv", "w", newline='') as csvfile:
@@ -92,6 +97,12 @@ class BagToCSV:
             title += ["base (x)", "base (y)", "base (theta)"]
             title += ["gripper (x)", "gripper (y)", "gripper (z), gripper (qx)", "gripper (qy)", "gripper (qz)", "gripper (qw)"]
             title += ["handover_goal (x)", "handover_goal (y)", "handover_goal (z), handover_goal (qx)", "handover_goal (qy)", "handover_goal (qz)", "handover_goal (qw)"]
+            for expression in EXPRESSIONS:
+                title += [expression + " (global)"]
+            title += ["valence (global)", "arousal (global)"]
+            for expression in EXPRESSIONS:
+                title += [expression + " (fetch)"]
+            title += ["valence (fetch)", "arousal (fetch)"]            
             for bodypart in BODYPARTS:
                 title += [bodypart + " (x)",
                           bodypart + " (y)",
@@ -128,6 +139,8 @@ class BagToCSV:
                                     self.read_static_tf(msg, t_obj)
                                 elif topic == "/body_pose":
                                     self.read_pose(msg)
+                                elif topic == "/emotion/global" or topic == "/emotion/fetch":
+                                    self.read_emotion(msg, topic)
 
                                 self.update_episode()
 
@@ -137,6 +150,7 @@ class BagToCSV:
                                     print("Finished converting: ", current_message, "/", total_messages)
 
                             print("Finished converting: ", current_message, "/", total_messages)                                    
+
 
     def read_ds4(self, msg):
         # Base movement
@@ -218,6 +232,13 @@ class BagToCSV:
             self.static_br.sendTransform(static_transformStamped)
 
 
+    def read_emotion(self, msg, topic):
+        if topic == "/emotion/global":
+            self.emotions_global = msg.expressions + [msg.valence, msg.arousal]
+        elif topic == "/emotion/fetch":
+            self.emotions_fetch = msg.expressions + [msg.valence, msg.arousal]
+
+
     def read_pose(self, msg):
         self.bodyparts = []
         for i in range(len(BODYPARTS)):
@@ -283,6 +304,10 @@ class BagToCSV:
         row += self.t_base[0:2] + [tf.transformations.euler_from_quaternion(self.R_base, axes='sxyz')[-1]]
         row += self.t_gripper + self.R_gripper
         row += self.t_handover_goal + self.R_handover_goal
+
+        # Emotion estimation
+        row += self.emotions_global
+        row += self.emotions_fetch
 
         # Pose estimation
         row += self.bodyparts
