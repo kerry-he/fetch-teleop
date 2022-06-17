@@ -2,8 +2,12 @@
 <launch>
   <arg name="record" default="true" />
   <arg name="id" default=""/>
+  
+  <param name="emotion_camera" type="string" value="global_camera/compressed" />
 
-  <node pkg="pose_estimation" type="fetch_teleop.py" name="pose_estimation" output="screen" />
+  <node pkg="pose_estimation" type="pose_est_main.py" name="pose_estimation" output="screen" />
+  <node pkg="pose_estimation" type="EmoNode.py" name="emotion_estimation" output="screen" />
+
 
   <node pkg="rosbag" type="record" name="viz_local"
     args="record -o /media/kerry/D47B-4625/bag/$(arg id) /global_camera/compressed /body_pose " if="$(arg record)"/>    

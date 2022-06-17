@@ -7,3 +7,6 @@
 [submodule "geometry2"]
 	path = geometry2
 	url = https://github.com/ros/geometry2.git
+[submodule "pose_estimation/src/emonet"]
+	path = pose_estimation/src/emonet
+	url = https://github.com/kerry-he/emonet
