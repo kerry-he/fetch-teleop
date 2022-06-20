@@ -169,20 +169,47 @@ def arm(r, bTep):
     
     return qd
 
-HYST_B_FORWARDS = True
+HYST_B_ROTATION = None
+hyst_scale = 1.0
 
 def base(r, v, omega, b_ratio, wTb_cumulative_lengths, wTb_waypoints, segment):
     LOOKAHEAD_DISTACE = 0.5
     lookahead_ratio = LOOKAHEAD_DISTACE / wTb_cumulative_lengths[-1]
 
-    STOP_DISTANCE = 0.15
+    STOP_DISTANCE = 0.1
     stop_ratio = STOP_DISTANCE / wTb_cumulative_lengths[-1]
 
     v = max(min(v, r.qdlim[1]), -r.qdlim[1])
     omega = max(min(omega, r.qdlim[0]), -r.qdlim[0])
 
     # Determine direction of travel
-    direction = np.sign(np.dot(r._base.A[0:2, 0], wTb_waypoints[segment + 1] - wTb_waypoints[segment])) * np.sign(v)
+    vect_segment = wTb_waypoints[segment + 1] - wTb_waypoints[segment]
+    vect_segment /= np.linalg.norm(vect_segment)
+    raw_direction = np.dot(r._base.A[0:2, 0], vect_segment)
+    direction = np.sign(raw_direction) * np.sign(v)
+
+    # Logic to slow down turning
+    STOP_THETA = 0.30
+    global HYST_B_ROTATION, hyst_scale
+    if omega == 0.0:
+        HYST_B_ROTATION = None
+        hyst_scale = 1.0
+    elif HYST_B_ROTATION is None:
+        if raw_direction > 0:
+            HYST_B_ROTATION = "BACKWARDS"
+        else:
+            HYST_B_ROTATION = "FORWARDS"
+    if HYST_B_ROTATION == "FORWARDS":
+        theta = np.arccos(raw_direction)
+        if theta < STOP_THETA:
+            hyst_scale = min(hyst_scale, theta / STOP_THETA)
+            omega *= hyst_scale
+    elif HYST_B_ROTATION == "BACKWARDS":
+        theta = np.arccos(raw_direction)
+        if theta > np.pi - STOP_THETA:
+            hyst_scale = min(hyst_scale, (np.pi - theta) / STOP_THETA)
+            omega *= hyst_scale
+
 
     # Logic to slow down at path endpoints
     if direction > 0.0 and (1 - b_ratio) < stop_ratio:

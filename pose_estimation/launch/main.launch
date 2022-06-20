@@ -8,5 +8,5 @@
 
 
   <node pkg="rosbag" type="record" name="viz_local"
-    args="record -o /media/kerry/D47B-4625/bag/$(arg id) /global_camera/compressed /body_pose " if="$(arg record)"/>    
+    args="record -o /media/kerry/D47B-4625/bag/$(arg id) /global_camera/compressed /body_pose /emotion/global " if="$(arg record)"/>    
 </launch>

@@ -4,11 +4,13 @@
   <arg name="id" default=""/>
 
   <rosparam command="load" file="$(find fetch_teleop)/cfg/preferences.yaml" ns="fetch_teleop"/>
+  <rosparam param="ds4_name">"ds4"</rosparam>
 
   <include file="$(find ds4_driver)/launch/ds4_driver.launch" />
   <node pkg="fetch_teleop" type="main_ros.py" name="fetch_teleop" output="screen" />
+  <node pkg="pose_estimation" type="EmoNode.py" name="emotion_recognition" output="screen" />
 
   <node pkg="rosbag" type="record" name="viz"
     args="record -o /media/hdd/bags/$(arg id) /tf /tf_static /map
-    /head_camera/rgb/image_rect_color/compressed /visualization_marker /status /good_data " if="$(arg record)"/>    
+    /head_camera/rgb/image_rect_color/compressed /visualization_marker /status /emotion/fetch " if="$(arg record)"/>
 </launch>
