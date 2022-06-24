@@ -57,12 +57,14 @@ While in Edit Mode, the Base Control will allow complete freedom over the contro
 The base can also be changed by publishing a point in RViz. The closest waypoint to the published point will change to the published point's position.
 
 ### Arm parameters
-While in Edit Mode, the Arm Control will allow complete freedom over the Fetch's arm. Linear motion in the $xy$-plane is controlled using the **Right Joystick**, linear motion in the $z$-axis is controlled using the **D-Pad Up/Down** buttons, and pitch and yaw of the end-effector is controlled using the **Left Joystick**. The position the end-effector moves to while in Edit Mode defines the new handover waypoint the arm moves to relative to the base. 
+While in Edit Mode, the Arm Control will instead modify the goal position of the end-effector. Linear motion in the $xy$-plane is controlled using the **Right Joystick**, linear motion in the $z$-axis is controlled using the **D-Pad Up/Down** buttons, and pitch and yaw of the end-effector is controlled using the **Left Joystick**. The edited goal position will be saved to the left/straight/right handover mode the robot is currently on.
 
 ### General
 Parameters are saved in a `.yaml` file, and loaded up when the script is run. To save parameters which have been changed, press the **Option** button. To reset all settings to those currently in the `.yaml` file, press the **Share** button.
 
 
 ## Other
-To indicate whether a handover is a good or bad sample, press the **L2** trigger to indicate a good handover, or **R2** to indicate a bad handover.
+To indicate whether a handover is a good or bad sample, press the **Circle** button to indicate a good handover, or **Cross** to indicate a bad handover.
+
+To indicate what type of handover the robot is performing, press the **L2** trigger to indicate a robot-to-human handover, or **R2** to indicate a human-to-robot handover.
 
