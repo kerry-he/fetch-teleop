@@ -7,7 +7,6 @@ import rospy
 
 import tf
 import tf2_ros
-import geometry_msgs.msg
 
 BODYPARTS = [
     "nose",
@@ -89,12 +88,15 @@ class BagToCSV:
 
         self.episode_rows = []
 
+        self.title = None
+
 
     def run(self):
         with open(self.name + ".csv", "w", newline='') as csvfile:
             csv_writer = csv.writer(csvfile, delimiter=',',
                                     quotechar='|', quoting=csv.QUOTE_MINIMAL)
 
+            # Construct title for first row of CSV
             title = ["episode", "time (s)"]
             title += ["status", "handover quality", "handover type", "arm status", "base status", "handover status"]
             title += ["base (linear)", "base (angular)", "arm (linear)"]
@@ -115,6 +117,9 @@ class BagToCSV:
                 ]
             csv_writer.writerow(title)
 
+            self.title = title
+
+            # Find bag file
             for filename in os.scandir(self.directory):
                 if filename.is_file():
                     if os.path.splitext(filename)[-1].lower() == ".bag":
@@ -123,19 +128,19 @@ class BagToCSV:
                             total_messages = rosbag.Bag(filename.name).get_message_count()
                             current_message = 0                            
 
+                            # Loop through each message
                             for topic, msg, t in rosbag.Bag(filename.name).read_messages():
+                                # Get time of message
                                 t_obj = t
                                 t = t.to_sec()
                                 if self.t0 is None:
                                     self.t0 = t
 
+                                # Save latest states to CSV line
                                 if t - self.t0 >= self.dt * self.i:
-                                    # csv_writer.writerow(
-                                    #     [self.episode, self.dt * self.i] + self.write_csv_line()
-                                    # )
-                                    # self.i += 1
                                     self.write_csv_line()
 
+                                # Update states based on message topic
                                 if topic == "/status":
                                     self.read_ds4(msg)
                                 elif topic == "/tf":
@@ -147,10 +152,11 @@ class BagToCSV:
                                 elif topic == "/emotion/global" or topic == "/emotion/fetch":
                                     self.read_emotion(msg, topic)
 
+                                # Check if episode is finished
                                 self.update_episode(csv_writer)
 
+                                # Output progress to screen
                                 current_message += 1
-
                                 if current_message % 10000 == 0:
                                     print("Finished converting: ", current_message, "/", total_messages)
 
@@ -213,7 +219,14 @@ class BagToCSV:
 
 
     def read_tf(self, msg, t):
+        # To read TF, I decided to use the TF package since TF are only saved 
+        # relative to some frames, and the TF package builds a tree which allows 
+        # us to read any frame relative to any other frame without doing the 
+        # calculations ourselves. However, this requires the script to run with
+        # roscore.
+
         for transform in msg.transforms:
+            # Receive position and rotation data from TF
             trans = [
                 transform.transform.translation.x,
                 transform.transform.translation.y,
@@ -224,7 +237,9 @@ class BagToCSV:
                 transform.transform.rotation.y,
                 transform.transform.rotation.z,
                 transform.transform.rotation.w
-            ]            
+            ]
+
+            # Publish TF frame
             self.br.sendTransform(trans,
                                   quat,
                                   t,
@@ -232,6 +247,7 @@ class BagToCSV:
                                   transform.header.frame_id)
 
     def read_static_tf(self, msg, t):
+        # Same as read_tf but for static TF frames
         for transform in msg.transforms:
             static_transformStamped = transform
             self.static_br.sendTransform(static_transformStamped)
@@ -275,9 +291,11 @@ class BagToCSV:
 
         if self.episode_hysteresis:
             if ang_diff(robot_theta, self.theta_to_user) < 0.2 and self.base_status == "TO PARTICIPANT":
+                # Dump all data into CSV and reset memory
                 self.write_csv_episode(csv_writer)
                 self.episode_rows = []
 
+                # Increment episode, reset parameters
                 self.episode += 1
                 self.episode_hysteresis = False
                 self.handover_quality = "N/A"
@@ -291,6 +309,7 @@ class BagToCSV:
 
 
     def write_csv_line(self):
+        # Time data
         row = [self.episode, self.dt * self.i]
 
         # Categorical labels
@@ -346,12 +365,15 @@ class BagToCSV:
         self.episode_rows += [row]
         self.i += 1
 
-        return row
-
     def write_csv_episode(self, csv_writer):
+        # Dump all data received for an episode into the CSV
         for row in self.episode_rows:
-            row[3] = self.episode_rows[-1][3]
-            row[4] = self.episode_rows[-1][4]
+            # Overwrite handover quality and type with last message received
+            quality_idx = self.title.index("handover quality")
+            type_idx = self.title.index("handover type")
+            row[quality_idx] = self.episode_rows[-1][quality_idx]
+            row[type_idx] = self.episode_rows[-1][type_idx]
+
             csv_writer.writerow(row)
 
 

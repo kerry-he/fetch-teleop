@@ -15,6 +15,7 @@ with rosbag.Bag(name + "_combined.bag", "w") as outbag:
                     total_messages = rosbag.Bag(filename.name).get_message_count()
                     current_message = 0
 
+                    # For each message, write it to a new ROS bag
                     for topic, msg, t in rosbag.Bag(filename.name).read_messages():
                         outbag.write(topic, msg, t)
                         current_message += 1

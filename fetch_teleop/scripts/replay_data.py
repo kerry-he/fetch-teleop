@@ -1,14 +1,9 @@
 #!/usr/bin/python3
-import os
 import csv
 import numpy as np
 
 import rospy
 import rospkg
-
-import tf
-import tf2_ros
-import geometry_msgs.msg
 
 from ds4_driver.msg import Status
 
@@ -23,6 +18,7 @@ class ReplayData:
         rospack = rospkg.RosPack()
         path = rospack.get_path("fetch_teleop")
 
+        # Read data and store to memory
         with open(path + "/data/" + name + ".csv", newline='') as csvfile:
             reader = csv.DictReader(csvfile)
             for row in reader:
@@ -46,6 +42,7 @@ class ReplayData:
         status = Status()
         status.header.frame_id = "replay"
 
+        # Check for pause or finished loop (for no repeat)
         if self.pause or self.i > self.N:
             if self.i > self.N:
                 rospy.loginfo_throttle(10.0, "Finished replaying data!")
@@ -54,6 +51,8 @@ class ReplayData:
 
         i = int(np.floor(self.i))
 
+        # Define robot motions based on CSV information
+        # Arm motion
         if self.arm_status[i] == "REACHING":
             status.axis_right_y = 1.0
             status.button_l1 = 1
@@ -63,6 +62,7 @@ class ReplayData:
             status.button_l1 = 1
             status.button_r1 = 1
 
+        # Base motion
         if self.base_status[i] == "TO PARTICIPANT" or self.base_status[i] == "TO OPERATOR":
             status.axis_right_y = 1.0
             status.button_l1 = 1
@@ -70,6 +70,7 @@ class ReplayData:
             status.axis_left_x = 1.0
             status.button_l1 = 1
 
+        # Handover location
         if self.handover_status[i] == "LEFT":
             status.button_square = 1
             status.button_l1 = 1

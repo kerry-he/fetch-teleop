@@ -58,9 +58,6 @@ class FetchTeleop:
         self.ee_ratio = 0.0 # 0: Tucked, 1: Handovver
         self.segment = 0
 
-        self.pushed_button = False
-
-
         # Base safety stopping feature
         self.l1 = False
         self.detected_object = False
@@ -162,6 +159,7 @@ class FetchTeleop:
 
 
     def teleop_callback(self, msg):
+        # (Legacy) For keyboard control
         TELEOP_HZ = 30
         EE_SPEED = 0.25
 
@@ -183,9 +181,11 @@ class FetchTeleop:
 
     def ds4_callback(self, msg):
 
+        # Make sure DS4 header is as expected to avoid conflicts between automatic and manual control
         if msg.header.frame_id != self.ds4_name:
             return
 
+        # Define rate of DS4 messages
         TELEOP_HZ = 100
         EE_SPEED = 0.25
         rate = EE_SPEED / TELEOP_HZ
@@ -196,7 +196,7 @@ class FetchTeleop:
         #       L-stick: Rotate
         #   R1: Arm control
         #       R-stick: Extend/retract
-        # L2: Edit position mode
+        # L1 + L2: Edit position mode
         #   Default: Base waypoint edit
         #   R1: Arm waypoint edit        
 
@@ -226,42 +226,38 @@ class FetchTeleop:
                 self.save_params()                 
             
             return
-        self.pushed_button = False
 
-        if msg.button_r1: # Arm control
-            if msg.button_l2: # Edit ee final waypoint
-                # if not self.start_ee_edit:
-                #     # Set new target ee pose to current ee pose
-                #     r_pose = sm.SE3(self.fetch.fkine(self.fetch.q, include_base=False, fast=True))
-                #     self.bTe_handover = r_pose.t
-                #     self.bRe_handover = controller.rotationToRPY(r_pose.R)
-                #     self.start_ee_edit = True
-
-                # self.ee_ratio = 1.0
-
+        if msg.button_r1: 
+            # Arm control
+            if msg.button_l2: 
+                # Edit ee final waypoint
                 self.bTe_handover += controller.edit_ee_waypoint(msg, rate)
-                self.bTe_handover[2] = max(0.90, self.bTe_handover[2])
+                self.bTe_handover[2] = max(0.90, self.bTe_handover[2]) # Limit z-axis
                 self.bRe_handover += controller.edit_ee_angle_waypoint(msg, rate)
 
+                # Save edited goal to relevant slot
                 self.bTe_handover_list[self.handover_mode] = self.bTe_handover
                 self.bRe_handover_list[self.handover_mode] = self.bRe_handover
-                # self.bRe_tucked[1] = np.sign(self.bRe_handover[1]) * abs(self.bRe_tucked[1])
-            else: # Control arm
+            else: 
+                # Control arm
                 if msg.button_r3:
+                    # Edit speed of end-effector
                     self.ee_speed = abs(msg.axis_right_y)
                 if self.ee_ratio > 0.99 and self.handover_mode != 1:
+                    # If changing from left to right handover, change tucked orientation (and vice versa)
                     self.bRe_tucked[1] = np.sign(self.bRe_handover[1]) * np.pi/2
                 if self.ee_ratio < 0.01:
+                    # If tucked, allow for rotation of tuck to change from left to right handover (and vice versa)
                     self.bTe_tucked, self.bRe_tucked = controller.edit_ee_tucked(self.bTe_tucked, self.bRe_tucked, msg, rate)  
 
                 self.ee_ratio += np.sign(msg.axis_right_y) * self.ee_speed * rate
                 self.ee_ratio = min(max(0.0, self.ee_ratio), 1.0)
 
-                # self.start_ee_edit = False
-
             base_qd = np.array([0., 0.])
-        else: # Base control
-            if msg.button_l2: # Edit base waypoint
+        else: 
+            # Base control
+            if msg.button_l2: 
+                # Edit base waypoint
                 base_qd = np.array([
                     max(min(msg.axis_left_x, self.fetch.qdlim[1]), -self.fetch.qdlim[1]),
                     max(min(msg.axis_right_y, self.fetch.qdlim[0]), -self.fetch.qdlim[0])
@@ -269,12 +265,15 @@ class FetchTeleop:
 
                 self.wTb_waypoints = controller.edit_base_waypoint(self.fetch, self.wTb_waypoints, self.b_ratio)
             else:
+                # Control base
                 if msg.button_r3:
+                    # Edit base angular speed
                     self.base_lin_speed = abs(msg.axis_right_y)
                 if msg.button_l3:
+                    # Edit base linear speed
                     self.base_ang_speed = abs(msg.axis_left_x)
                 v = np.sign(msg.axis_right_y) * self.base_lin_speed
-                omega = np.sign(msg.axis_left_x) * self.base_ang_speed             
+                omega = np.sign(msg.axis_left_x) * self.base_ang_speed
                 base_qd = controller.base(self.fetch, v, omega, self.b_ratio, self.wTb_cumulative_lengths, self.wTb_waypoints, self.segment)
 
 
@@ -307,6 +306,7 @@ class FetchTeleop:
 
     
     def viz_callback(self, event):
+        # Draw base path to RViz
         marker = Marker()
 
         marker.header.frame_id = "/map"
@@ -340,6 +340,7 @@ class FetchTeleop:
 
 
     def stop_robot(self):
+        # Stop robot by sending zero velocities to base and arm
         v_base = Twist()
         self.basevel_pub.publish(v_base)         
 
@@ -388,6 +389,7 @@ class FetchTeleop:
         rosparam.dump_params(path + "/cfg/preferences.yaml", "/fetch_teleop", verbose=True)
 
     def reset_params(self):
+        # Re-write ROS params with those currently in cfg file
         rospy.loginfo("Reset parameters")
         self.bTe_handover_list = np.array(rospy.get_param("/fetch_teleop/bTe_handover_list"))
         self.bRe_handover_list = np.array(rospy.get_param("/fetch_teleop/bRe_handover_list"))   
