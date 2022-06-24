@@ -1,0 +1,12 @@
+<?xml version="1.0"?>
+<launch>
+  <arg name="repeat" default="false" />
+
+  <rosparam command="load" file="$(find fetch_teleop)/cfg/preferences.yaml" ns="fetch_teleop"/>
+  <rosparam param="ds4_name">"replay"</rosparam>
+  <rosparam param="repeat" subst_value="True">$(arg repeat)</rosparam>
+
+  <include file="$(find ds4_driver)/launch/ds4_driver.launch" />
+  <node pkg="fetch_teleop" type="main_ros.py" name="fetch_teleop" output="screen" />
+  <node pkg="fetch_teleop" type="replay_data.py" name="replay_node" output="screen" />
+</launch>

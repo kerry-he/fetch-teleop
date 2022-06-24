@@ -78,12 +78,16 @@ class BagToCSV:
 
         self.handover_quality = "N/A"
         self.handover_type = "N/A"
+
+        self.episode_status = "TO PARTICIPANT"
         self.arm_status = "STATIONARY"
         self.base_status = "STATIONARY"
         self.handover_status = "MIDDLE"
 
         self.emotions_global = [0.0] * (len(EXPRESSIONS) + 2)
         self.emotions_fetch = [0.0] * (len(EXPRESSIONS) + 2)
+
+        self.episode_rows = []
 
 
     def run(self):
@@ -92,7 +96,7 @@ class BagToCSV:
                                     quotechar='|', quoting=csv.QUOTE_MINIMAL)
 
             title = ["episode", "time (s)"]
-            title += ["handover quality", "handover type", "arm status", "base status", "handover status"]
+            title += ["status", "handover quality", "handover type", "arm status", "base status", "handover status"]
             title += ["base (linear)", "base (angular)", "arm (linear)"]
             title += ["base (x)", "base (y)", "base (theta)"]
             title += ["gripper (x)", "gripper (y)", "gripper (z), gripper (qx)", "gripper (qy)", "gripper (qz)", "gripper (qw)"]
@@ -126,10 +130,11 @@ class BagToCSV:
                                     self.t0 = t
 
                                 if t - self.t0 >= self.dt * self.i:
-                                    csv_writer.writerow(
-                                        [self.episode, self.dt * self.i] + self.write_csv_line()
-                                    )
-                                    self.i += 1
+                                    # csv_writer.writerow(
+                                    #     [self.episode, self.dt * self.i] + self.write_csv_line()
+                                    # )
+                                    # self.i += 1
+                                    self.write_csv_line()
 
                                 if topic == "/status":
                                     self.read_ds4(msg)
@@ -142,7 +147,7 @@ class BagToCSV:
                                 elif topic == "/emotion/global" or topic == "/emotion/fetch":
                                     self.read_emotion(msg, topic)
 
-                                self.update_episode()
+                                self.update_episode(csv_writer)
 
                                 current_message += 1
 
@@ -249,22 +254,48 @@ class BagToCSV:
                 msg.array[i].confidence
             ]
 
-    def update_episode(self):
+    def update_episode(self, csv_writer):
+        # State machine for overall robot status
+        # To participant -> Participant handover -> To operator -> Operator handover -> To participant
+        if self.episode_status == "TO PARTICIPANT":
+            if self.arm_status == "REACHING":
+                self.episode_status = "PARTICIPANT HANDOVER"
+        elif self.episode_status == "PARTICIPANT HANDOVER":
+            if self.base_status == "ROTATING":
+                self.episode_status = "TO OPERATOR"
+        elif self.episode_status == "TO OPERATOR":
+            if self.arm_status == "REACHING":
+                self.episode_status = "OPERATOR HANDOVER"
+        elif self.episode_status == "OPERATOR HANDOVER":
+            if self.base_status == "ROTATING":
+                self.episode_status = "TO PARTICIPANT"
+
+        # Calculate if new episode is triggered
         robot_theta = tf.transformations.euler_from_quaternion(self.R_base, axes='sxyz')[-1]
 
         if self.episode_hysteresis:
-            if ang_diff(robot_theta, self.theta_to_user) < 0.1:
+            if ang_diff(robot_theta, self.theta_to_user) < 0.2 and self.base_status == "TO PARTICIPANT":
+                self.write_csv_episode(csv_writer)
+                self.episode_rows = []
+
                 self.episode += 1
                 self.episode_hysteresis = False
                 self.handover_quality = "N/A"
                 self.handover_type = "N/A"
+
+                if self.episode_status != "TO PARTICIPANT":
+                    rospy.logwarn("Something may have gone wrong with status estimation in Episode %d", self.episode - 1)
+                    self.episode_status = "TO PARTICIPANT"
         else:
             self.episode_hysteresis = ang_diff(robot_theta, self.theta_to_user) > np.pi / 2
 
 
     def write_csv_line(self):
+        row = [self.episode, self.dt * self.i]
+
         # Categorical labels
-        row = [
+        row += [
+            self.episode_status,
             self.handover_quality,
             self.handover_type,
             self.arm_status,
@@ -312,7 +343,16 @@ class BagToCSV:
         # Pose estimation
         row += self.bodyparts
 
+        self.episode_rows += [row]
+        self.i += 1
+
         return row
+
+    def write_csv_episode(self, csv_writer):
+        for row in self.episode_rows:
+            row[3] = self.episode_rows[-1][3]
+            row[4] = self.episode_rows[-1][4]
+            csv_writer.writerow(row)
 
 
 if __name__ == "__main__":
