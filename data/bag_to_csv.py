@@ -123,7 +123,9 @@ class BagToCSV:
             for filename in os.scandir(self.directory):
                 if filename.is_file():
                     if os.path.splitext(filename)[-1].lower() == ".bag":
-                        if filename.name[0:len(self.name)] == self.name:
+                        if filename.name[0:len(self.name)] == self.name and filename.name[-12:] == "combined.bag":
+
+                            print("Found bag: ", filename.name)
 
                             total_messages = rosbag.Bag(filename.name).get_message_count()
                             current_message = 0                            
@@ -160,7 +162,9 @@ class BagToCSV:
                                 if current_message % 10000 == 0:
                                     print("Finished converting: ", current_message, "/", total_messages)
 
-                            print("Finished converting: ", current_message, "/", total_messages)                                    
+                            self.write_csv_episode(csv_writer)
+
+                            print("Finished converting: ", current_message, "/", total_messages)
 
 
     def read_ds4(self, msg):
@@ -255,9 +259,9 @@ class BagToCSV:
 
     def read_emotion(self, msg, topic):
         if topic == "/emotion/global":
-            self.emotions_global = msg.expressions + [msg.valence, msg.arousal]
+            self.emotions_global = list(msg.expressions) + [msg.valence, msg.arousal]
         elif topic == "/emotion/fetch":
-            self.emotions_fetch = msg.expressions + [msg.valence, msg.arousal]
+            self.emotions_fetch = list(msg.expressions) + [msg.valence, msg.arousal]
 
 
     def read_pose(self, msg):

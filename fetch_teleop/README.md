@@ -1,32 +1,55 @@
 # Fetch Teleoperation
 
-### Launch mapping
+### Launch mapping (Fetch)
 
-    roslaunch fetch_navigation fetch_nav.launch map_file:=/home/hrigroup/maps/<MAP-NAME>.yaml
+    roslaunch fetch_navigation fetch_nav.launch map_file:=/home/hrigroup/lounge.yaml
 
 
-### MoveIt! to initial configuration
+### MoveIt! to initial configuration (Fetch)
 
     source kerryaswell_ws/devel/setup.bash
     roslaunch move_pose move_arm.launch
 
 
-### Launch control and recording
+### Launch control and recording (Fetch)
 
     holistart
     source kerry_ws/devel/setup.bash
-    roslaunch fetch_teleop main.launch
+    roslaunch fetch_teleop main.launch id:=**\<ID\>**
     holistop
 
-### Launch global camera on local machine
+
+### Launch global camera on local machine (Local)
 
     source fetch_ws/devel/setup.bash
-    roslaunch pose_estimation main.launch
+    roslaunch pose_estimation main.launch id:=**\<ID\>**
 
-### Visualize
+
+### Mount/Unmount HDD  (Fetch)
+
+    sudo mount /dev/sdb1 /media/hdd
+    sudo umount /media/hdd
+
+
+### Visualize (Local)
+
+If you want to visualise the Fetch model in RViz from ROS bag data
 
     sudo apt-get install ros-melodic-fetch-description
     rosparam set robot_description -t /opt/ros/melodic/share/fetch_description/robots/fetch.urdf
+
+
+### Replay data (Fetch)
+
+Data that can be replayed is of the same form of the CSV produced from `bag_to_csv.py` (see `../data/`). For example, you can choose data from a single episode an make a CSV using that data to replay robot motions from that episode.
+
+    source kerry_ws/devel/setup.bash
+    roslaunch fetch_teleop replay.launch repeat:=true
+
+When prompted (it might be hard to see the prompt under all the other console text), input the prefix of the file you want to play the data from. 
+
+You can press the **L1** button to toggle on and off pause.
+
 
 # Controls
 
