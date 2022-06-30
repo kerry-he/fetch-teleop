@@ -138,10 +138,6 @@ class BagToCSV:
                                 if self.t0 is None:
                                     self.t0 = t
 
-                                # Save latest states to CSV line
-                                if t - self.t0 >= self.dt * self.i:
-                                    self.write_csv_line()
-
                                 # Update states based on message topic
                                 if topic == "/status":
                                     self.read_ds4(msg)
@@ -154,8 +150,12 @@ class BagToCSV:
                                 elif topic == "/emotion/global" or topic == "/emotion/fetch":
                                     self.read_emotion(msg, topic)
 
-                                # Check if episode is finished
-                                self.update_episode(csv_writer)
+                                # Save latest states to CSV line
+                                if t - self.t0 >= self.dt * self.i:
+                                    # Check if episode is finished
+                                    self.update_episode(csv_writer)
+
+                                    self.write_csv_line()                                    
 
                                 # Output progress to screen
                                 current_message += 1
@@ -217,9 +217,17 @@ class BagToCSV:
                 self.handover_quality = "BAD"
 
             if msg.button_l2:
-                self.handover_type = "ROBOT TO HUMAN"
+                if self.handover_type == "N/A":
+                    self.handover_type = "ROBOT TO HUMAN"
+                elif self.handover_type == "HUMAN TO ROBOT":
+                    # If another handover type is already logged, note down both occured
+                    self.handover_type = "BOTH"
             elif msg.button_r2:
-                self.handover_type = "HUMAN TO ROBOT"   
+                if self.handover_type == "N/A":
+                    self.handover_type = "HUMAN TO ROBOT"
+                elif self.handover_type == "ROBOT TO HUMAN":
+                    # If another handover type is already logged, note down both occured
+                    self.handover_type = "BOTH"
 
 
     def read_tf(self, msg, t):
@@ -276,19 +284,28 @@ class BagToCSV:
 
     def update_episode(self, csv_writer):
         # State machine for overall robot status
-        # To participant -> Participant handover -> To operator -> Operator handover -> To participant
+        # To participant -> Participant handover -> Rotate to operator ->
+        # To operator -> Operator handover -> Rotate to participant
         if self.episode_status == "TO PARTICIPANT":
             if self.arm_status == "REACHING":
                 self.episode_status = "PARTICIPANT HANDOVER"
         elif self.episode_status == "PARTICIPANT HANDOVER":
             if self.base_status == "ROTATING":
-                self.episode_status = "TO OPERATOR"
+                self.episode_status = "ROTATE TO OPERATOR"
+        elif self.episode_status == "ROTATE TO OPERATOR":
+            if self.base_status == "TO OPERATOR":
+                self.episode_status = "TO OPERATOR"                
         elif self.episode_status == "TO OPERATOR":
             if self.arm_status == "REACHING":
                 self.episode_status = "OPERATOR HANDOVER"
+            elif self.base_status == "ROTATING":
+                self.episode_status = "ROTATE TO PARTICIPANT"
         elif self.episode_status == "OPERATOR HANDOVER":
             if self.base_status == "ROTATING":
-                self.episode_status = "TO PARTICIPANT"
+                self.episode_status = "ROTATE TO PARTICIPANT"
+        elif self.episode_status == "ROTATE TO PARTICIPANT":
+            if self.arm_status == "REACHING":
+                self.episode_status = "OPERATOR HANDOVER"
 
         # Calculate if new episode is triggered
         robot_theta = tf.transformations.euler_from_quaternion(self.R_base, axes='sxyz')[-1]
@@ -305,9 +322,9 @@ class BagToCSV:
                 self.handover_quality = "N/A"
                 self.handover_type = "N/A"
 
-                if self.episode_status != "TO PARTICIPANT":
+                if self.episode_status != "ROTATE TO PARTICIPANT":
                     rospy.logwarn("Something may have gone wrong with status estimation in Episode %d", self.episode - 1)
-                    self.episode_status = "TO PARTICIPANT"
+                self.episode_status = "TO PARTICIPANT"
         else:
             self.episode_hysteresis = ang_diff(robot_theta, self.theta_to_user) > np.pi / 2
 
